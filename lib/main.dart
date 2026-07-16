@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
+import 'dart:io';
+import 'package:http/http.dart' as http;
 
 void main() {
   runApp(const MyApp());
@@ -64,6 +66,42 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
+    _initializeCamera();
+  }
+
+  Future<void> uploadVideo(
+      File videoFile,
+      int width,
+      int height,
+  ) async {
+    final url = Uri.parse(
+      "http://192.168.1.53:8000/upload-video",
+    );
+
+    var request = http.MultipartRequest(
+      'POST',
+      url,
+    );
+
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'video',
+        videoFile.path,
+        filename: 'video.mp4',
+      ),
+    );
+
+    request.fields.addAll({
+      'width': width.toString(),
+      'height': height.toString(),
+    });
+
+    print(request.fields);
+
+    final response = await request.send();
+
+    print("Status: ${response.statusCode}");
+    print(await response.stream.bytesToString());
   }
 
 
@@ -108,8 +146,9 @@ class _MyHomePageState extends State<MyHomePage> {
       _isRecording = false;
       _status = video.path;
     });
-    print("Video resolution: ${width}x$height");
-    print("Video saved: ${video.path}");
+    final file = File(video.path);
+
+    await uploadVideo(file, width, height);
   }
 
 
@@ -147,7 +186,4 @@ class _MyHomePageState extends State<MyHomePage> {
     );
     
   }
-
-
-  
 }
