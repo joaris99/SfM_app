@@ -61,6 +61,8 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isRecording = false;
   bool _showCamera = false;
   String _status = "Ready";
+  bool _imageMode = false;
+  final List<File> _images = [];
 
 
   @override
@@ -68,6 +70,60 @@ class _MyHomePageState extends State<MyHomePage> {
     super.initState();
     _initializeCamera();
   }
+
+  Future<void> takePicture() async {
+    if (_controller == null) return;
+
+    final image = await _controller!.takePicture();
+
+    setState(() {
+      _images.add(File(image.path));
+      _status = "${_images.length} images captured";
+    });
+  }
+
+  Future<void> uploadImages() async {
+    if (_images.isEmpty) return;
+
+    final url = Uri.parse(
+      "http://192.168.1.53:8000/upload-images",
+    );
+
+    final Size size = _controller!.value.previewSize!;
+
+
+
+    final request = http.MultipartRequest("POST", url);
+
+    int width = size.width.round();
+    int height = size.height.round();
+    request.fields["width"] = width.toString();
+    request.fields["height"] = height.toString();
+
+      for (int i = 0; i < _images.length; i++) {
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            "images",
+            _images[i].path,
+            filename: "image_$i.jpg",
+          ),
+        );
+      }
+
+    final response = await request.send();
+
+    print(response.statusCode);
+    print(await response.stream.bytesToString());
+
+    if (response.statusCode == 200) {
+      setState(() {
+        _images.clear();
+        _status = "Images uploaded";
+      });
+    }
+  }
+
+  
 
   Future<void> uploadVideo(
       File videoFile,
@@ -108,9 +164,14 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _initializeCamera() async {
     final cameras = await availableCameras();
 
+    final camera = cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.back,
+    );
+
     _controller = CameraController(
-      cameras.first,
-      ResolutionPreset.high,
+      
+      camera,
+      ResolutionPreset.max, 
       enableAudio: false,
     );
 
@@ -162,28 +223,71 @@ class _MyHomePageState extends State<MyHomePage> {
     // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
         title: Text(widget.title),
+        actions: [
+          if (_imageMode)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  "${_images.length}",
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          IconButton(
+            icon: Icon(
+              _imageMode ? Icons.photo_camera : Icons.videocam,
+            ),
+            onPressed: () {
+              setState(() {
+                _imageMode = !_imageMode;
+              });
+            },
+          ),
+        ],
       ),
       body: _controller == null || !_controller!.value.isInitialized
         ? const Center(
             child: CircularProgressIndicator(),
           )
         : CameraPreview(_controller!),
-      floatingActionButton: FloatingActionButton(
+        
+      floatingActionButton: _imageMode
+    ? Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: "take",
+            onPressed: takePicture,
+            child: const Icon(Icons.camera),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: "upload",
+            onPressed: _images.isEmpty ? null : uploadImages,
+            child: const Icon(Icons.upload),
+          ),
+        ],
+      )
+    : FloatingActionButton(
         onPressed: _isRecording
             ? stopRecording
             : startRecording,
         child: Icon(
-          _isRecording ? Icons.stop : Icons.videocam,
+          _isRecording
+              ? Icons.stop
+              : Icons.videocam,
         ),
       ),
+      
+      
     );
+    
     
   }
 }
